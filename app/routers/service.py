@@ -16,7 +16,7 @@ import os
 
 router = APIRouter(responses={404: {"description": "Not Found"}})
 
-data_dir = "data"
+data_dir = "data"  # TODO: Move this to config file
 
 # Hello Word Endpoint
 
@@ -204,47 +204,52 @@ def get_repo_url(repo_path):
         raise Exception(f"Failed to get repo URL: {result.stderr}")
 
 
+def reclone_repos_internal():
+    """Reclone all repositories in the local directory."""
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+
+    # Define the directory where the repository is located
+    repo_dir = os.path.join(data_dir)
+    repo_list = os.listdir(repo_dir)
+
+    # Reclone all repositories
+    for repo_name in repo_list:
+        repo_path = os.path.join(repo_dir, repo_name)
+
+        # Get the original repository URL
+        try:
+            repo_url = get_repo_url(repo_path)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e),
+            )
+
+        # Delete the repository directory
+        shutil.rmtree(repo_path)
+
+        # Re-clone the repository
+        result = subprocess.run(
+            ["git", "clone", repo_url, repo_path],
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result.stderr,
+            )
+
+    return {"message": f"Repositories re-cloned successfully in {repo_dir}"}
+
+
 @router.post("/archives/all/reclone")
 def reclone_repos(api_key: APIKey = Depends(get_api_key)):
     """Reclone all repositories in the local directory."""
     try:
-        if not os.path.exists(data_dir):
-            os.makedirs(data_dir)
-
-        repo_dir = os.path.join(data_dir)
-
-        repo_list = os.listdir(repo_dir)
-
-        for repo_name in repo_list:
-            repo_path = os.path.join(repo_dir, repo_name)
-
-            # Get the original repository URL
-            try:
-                repo_url = get_repo_url(repo_path)
-            except Exception as e:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=str(e),
-                )
-
-            # Delete the repository directory
-            shutil.rmtree(repo_path)
-
-            # Re-clone the repository
-            result = subprocess.run(
-                ["git", "clone", repo_url, repo_path],
-                capture_output=True,
-                text=True,
-            )
-
-            if result.returncode != 0:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=result.stderr,
-                )
-
-        return {"message": f"Repositories re-cloned successfully in {repo_dir}"}
-
+        return reclone_repos_internal()
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

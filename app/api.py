@@ -1,7 +1,13 @@
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .config import Settings
 from .routers import service
+import datetime
+from .routers.service import reclone_repos_internal
+
+# =================== Settings ===================
 
 # Load application settings
 settings = Settings()
@@ -44,3 +50,29 @@ app.add_middleware(
 
 # Register sub modules
 app.include_router(service.router, tags=["service"])
+
+
+# =================== Scheduler ===================
+
+
+scheduler = BackgroundScheduler()
+
+
+@app.on_event("startup")
+async def start_scheduler():
+    scheduler.start()
+
+
+@app.on_event("shutdown")
+async def shutdown_scheduler():
+    scheduler.shutdown()
+
+
+# Schedule print_date_time to be called every 5 seconds
+scheduler.add_job(
+    func=service.reclone_repos_internal,
+    trigger=IntervalTrigger(hours=6),  # TODO: move to config
+    id='reclone_repos',
+    name='Reclone all repos',
+    replace_existing=True
+)
