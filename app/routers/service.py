@@ -11,6 +11,7 @@ from app.schemas.userRequest import UserRequest, SystemResponse
 from app.schemas.key import APIKey
 from app.auth import get_api_key
 import subprocess
+import datetime
 import shutil
 import os
 
@@ -18,7 +19,20 @@ router = APIRouter(responses={404: {"description": "Not Found"}})
 
 data_dir = "data"  # TODO: Move this to config file
 
-# Hello Word Endpoint
+# ---------------------------- Helpers --------------------------- #
+
+
+def get_repo_url(repo_path):
+    """Get the URL of a repository."""
+    result = subprocess.run(
+        ["git", "-C", repo_path, "config", "--get", "remote.origin.url"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    else:
+        raise Exception(f"Failed to get repo URL: {result.stderr}")
 
 
 @router.get("/hello")
@@ -124,6 +138,65 @@ async def list_repos(api_key: APIKey = Depends(get_api_key)):
             detail=str(e),
         )
 
+
+@router.get("/archives/size")
+async def list_repos_sizes(api_key: APIKey = Depends(get_api_key)):
+    """List all repositories in the local directory and calculate their sizes."""
+    try:
+        if not os.path.exists(data_dir):
+            os.makedirs(data_dir)
+
+        repo_dir = os.path.join(data_dir)
+        repo_list = os.listdir(repo_dir)
+
+        total_size_bytes = 0  # Total size in bytes
+        repo_details = []  # List to hold details of each repository
+
+        for repo_name in repo_list:
+            repo_path = os.path.join(repo_dir, repo_name)
+            if os.path.isdir(repo_path):  # Check if it's a directory
+                dir_size_bytes = sum(
+                    f.stat().st_size for f in os.scandir(repo_path) if f.is_file()
+                )
+                # Convert bytes to megabytes and round
+                dir_size_megabytes = round(dir_size_bytes / (1024 * 1024), 2)
+                last_modified_time = max(
+                    f.stat().st_mtime for f in os.scandir(repo_path)
+                )
+                last_modified_time = datetime.datetime.fromtimestamp(
+                    last_modified_time)  # Convert to datetime
+                num_files = len(
+                    [f for f in os.scandir(repo_path) if f.is_file()])
+                num_subdirs = len(
+                    [d for d in os.scandir(repo_path) if d.is_dir()])
+                repo_url = get_repo_url(repo_path)  # Get the repo URL
+                repo_details.append({
+                    "name": repo_name,
+                    "size_MB": dir_size_megabytes,
+                    "last_modified": last_modified_time,
+                    "num_files": num_files,
+                    "num_subdirectories": num_subdirs,
+                    "url": repo_url  # Include the repo URL
+                })
+                total_size_bytes += dir_size_bytes
+
+        # Convert bytes to gigabytes and round
+        total_size_gigabytes = round(
+            total_size_bytes / (1024 * 1024 * 1024), 2)
+
+        return {
+            "message": f"Details retrieved successfully for repositories in {repo_dir}",
+            "repo_details": repo_details,
+            "total_size_gigabytes": total_size_gigabytes
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
 # ---------------------------- Update all Repos --------------------------- #
 
 
@@ -189,20 +262,6 @@ def update_repos(api_key: APIKey = Depends(get_api_key)):
 
 
 # ---------------------------- Reclone all Repos --------------------------- #
-
-
-def get_repo_url(repo_path):
-    """Get the URL of a repository."""
-    result = subprocess.run(
-        ["git", "-C", repo_path, "config", "--get", "remote.origin.url"],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0:
-        return result.stdout.strip()
-    else:
-        raise Exception(f"Failed to get repo URL: {result.stderr}")
-
 
 def reclone_repos_internal():
     """Reclone all repositories in the local directory."""
