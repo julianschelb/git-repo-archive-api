@@ -42,3 +42,11 @@ curl -X 'POST' \
   -H 'accept: application/json' \
   -d ''
 ```
+
+
+## Todo:
+
+- [ ]  Avoid collisions of repository names
+- [ ]  Return Git output in response (including errors)
+- [ ]  Use a separate folder for (large) repositories which do not need to be updated
+- [ ]  Functions for importing private keys into the Docker container
